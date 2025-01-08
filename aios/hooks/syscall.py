@@ -2,6 +2,7 @@ import time
 
 from aios.core.syscall import Syscall
 from aios.core.syscall.llm import LLMSyscall
+from aios.core.syscall.memory import MemorySyscall
 from aios.core.syscall.storage import StorageSyscall
 from aios.core.syscall.tool import ToolSyscall
 from aios.hooks.stores._global import (
@@ -62,7 +63,7 @@ def useSysCall():
 
 
     def mem_syscall_exec(agent_name, query):
-        syscall = Syscall(agent_name, query)
+        syscall = MemorySyscall(agent_name, query)
         syscall.set_status("active")
 
         completed_response, start_times, end_times, waiting_times, turnaround_times = (
@@ -198,33 +199,45 @@ def useSysCall():
     def send_request(agent_name, query):
         if isinstance(query, LLMQuery):
             action_type = query.action_type
-            # print(action_type)
             if action_type == "chat":
                 return llm_syscall_exec(agent_name, query)
-
             elif action_type == "tool_use":
                 response = llm_syscall_exec(agent_name, query)["response"]
-                # print(response)
                 tool_calls = response.tool_calls
-                # print(tool_calls)
                 return tool_syscall_exec(agent_name, tool_calls)
-
             elif action_type == "operate_file":
                 return storage_syscall_exec(llm_syscall_exec(agent_name, query))
 
         elif isinstance(query, ToolQuery):
             return tool_syscall_exec(agent_name, query)
 
-        elif isinstance(query, MemoryQuery):
-            return mem_syscall_exec(agent_name, query)
-
         elif isinstance(query, StorageQuery):
             return storage_syscall_exec(agent_name, query)
+
+        elif isinstance(query, MemoryQuery):
+            operation_type = query.operation_type
+            if operation_type in ["add", "search", "delete"]:
+                return mem_syscall_exec(agent_name, query)
+            elif operation_type == "process":
+                # First process the memory through LLM
+                response = llm_syscall_exec(agent_name, query)["response"]
+                # Then store the processed result
+                query.text = response
+                return mem_syscall_exec(agent_name, query)
+            elif operation_type == "query_and_process":
+                # First search for relevant memories
+                search_results = mem_syscall_exec(agent_name, query)["response"]
+                # Then process through LLM
+                query.context = search_results
+                return llm_syscall_exec(agent_name, query)
+        else:
+            return None
+
 
     class SysCallWrapper:
         llm = llm_syscall_exec
         storage = storage_syscall_exec
-        memory = memoryview
+        memory = mem_syscall_exec
         tool = tool_syscall_exec
 
-    return send_request, SysCallWrapper
+    return SysCallWrapper
