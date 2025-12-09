@@ -14,6 +14,7 @@ class OllamaLLM:
                 "model": self.config.model,
                 "prompt": prompt,
                 "temperature": self.config.temperature,
+                "stream": False,
             }
         )
         return response.json()["response"] 

@@ -8,9 +8,14 @@ from datetime import datetime
 class Memos:
     def __init__(self, config: MemoryConfig):
         self.config = config
+        # Merge collection_name into the config dict for the factory
+        vs_config = config.vector_store.config.copy()
+        if "collection_name" not in vs_config:
+            vs_config["collection_name"] = config.vector_store.collection_name
+
         self.vector_store = VectorStoreFactory.create(
             config.vector_store.provider, 
-            config.vector_store.config
+            vs_config
         )
         self.llm = LlmFactory.create(
             config.llm.provider, 
@@ -35,7 +40,10 @@ class Memos:
         embeddings = self.embedder.embed(text)
         
         # Store in vector store
-        self.vector_store.add(memory_item.id, embeddings, metadata)
+        # Ensure text is in metadata for retrieval
+        store_metadata = metadata.copy() if metadata else {}
+        store_metadata["text"] = text
+        self.vector_store.add(memory_item.id, embeddings, store_metadata)
         
         return memory_item
 
